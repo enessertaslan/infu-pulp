@@ -65,21 +65,8 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2);
 export default function Home() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [currentView, setCurrentView] = useState<"all" | "list" | "channel">("all");
-  const [influencers, setInfluencers] = useState<Influencer[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const data = window.localStorage.getItem("influx_v2");
-      return data ? JSON.parse(data) : [];
-    } catch { return []; }
-  });
-
-  const [lists, setLists] = useState<ListItem[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const data = window.localStorage.getItem("influx_lists_v2");
-      return data ? JSON.parse(data) : [];
-    } catch { return []; }
-  });
+  const [influencers, setInfluencers] = useState<Influencer[]>([]);
+  const [lists, setLists] = useState<ListItem[]>([]);
 
   const [currentViewData, setCurrentViewData] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -97,13 +84,26 @@ export default function Home() {
 
   const [toast, setToast] = useState<{ text: string; icon: string; active: boolean }>({ text: "", icon: "", active: false });
 
-  useEffect(() => {
-    localStorage.setItem("influx_v2", JSON.stringify(influencers));
-  }, [influencers]);
+  // Load data from server on mount
+  const refreshAll = async () => {
+    try {
+      const [infRes, listsRes] = await Promise.all([
+        fetch('/api/influencers'),
+        fetch('/api/lists'),
+      ]);
+      const infJson = await infRes.json();
+      const listsJson = await listsRes.json();
+      setInfluencers(Array.isArray(infJson) ? infJson : []);
+      // normalize lists.members to id[]
+      setLists(Array.isArray(listsJson) ? listsJson.map((l: any) => ({ id: l.id, name: l.name, members: Array.isArray(l.members) ? l.members.map((m: any) => m.id) : [] })) : []);
+    } catch (err) {
+      console.error('refreshAll', err);
+    }
+  };
 
   useEffect(() => {
-    localStorage.setItem("influx_lists_v2", JSON.stringify(lists));
-  }, [lists]);
+    refreshAll();
+  }, []);
 
   useEffect(() => {
     if (!toast.active) return;
@@ -185,16 +185,26 @@ export default function Home() {
       extraCampaigns: extraCampaigns.filter((item) => item.name.trim()),
     };
 
-    const newList = editingId
-      ? influencers.map((item) => (item.id === editingId ? payload : item))
-      : [...influencers, payload];
-
-    setInfluencers(newList);
-    setIsAddModalOpen(false);
-    setEditingId(null);
-    setExtraCampaigns([]);
-    setForm({ channel: "" });
-    toastShow(editingId ? "Güncellendi" : "Eklendi", editingId ? "✎" : "✓");
+    (async () => {
+      try {
+        if (editingId) {
+          await fetch(`/api/influencers/${editingId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...payload, extraCampaigns }) });
+          toastShow('Güncellendi', '✎');
+        } else {
+          await fetch('/api/influencers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...payload, extraCampaigns }) });
+          toastShow('Eklendi', '✓');
+        }
+        await refreshAll();
+      } catch (err) {
+        console.error(err);
+        alert('Sunucu hatası');
+      } finally {
+        setIsAddModalOpen(false);
+        setEditingId(null);
+        setExtraCampaigns([]);
+        setForm({ channel: '' });
+      }
+    })();
   };
 
   const openAdd = () => {
@@ -213,19 +223,27 @@ export default function Home() {
 
   const deleteOne = (id: string) => {
     if (!confirm("Silinsin mi?")) return;
-    setInfluencers((prev) => prev.filter((i) => i.id !== id));
-    setLists((prev) => prev.map((l) => ({ ...l, members: l.members.filter((m) => m !== id) })));
-    setSelectedIds((prev) => new Set(Array.from(prev).filter((x) => x !== id)));
-    toastShow("Silindi", "🗑");
+    (async () => {
+      try {
+        await fetch(`/api/influencers/${id}`, { method: 'DELETE' });
+        await refreshAll();
+        setSelectedIds((prev) => new Set(Array.from(prev).filter((x) => x !== id)));
+        toastShow('Silindi', '🗑');
+      } catch (err) { console.error(err); alert('Silme hatası'); }
+    })();
   };
 
   const deleteSelected = () => {
     if (!selectedIds.size) return;
     if (!confirm(`${selectedIds.size} influencer silinsin mi?`)) return;
-    setInfluencers((prev) => prev.filter((i) => !selectedIds.has(i.id)));
-    setLists((prev) => prev.map((l) => ({ ...l, members: l.members.filter((id) => !selectedIds.has(id)) })));
-    setSelectedIds(new Set());
-    toastShow("Silindi", "🗑");
+    (async () => {
+      try {
+        await Promise.all(Array.from(selectedIds).map((id) => fetch(`/api/influencers/${id}`, { method: 'DELETE' })));
+        await refreshAll();
+        setSelectedIds(new Set());
+        toastShow('Silindi', '🗑');
+      } catch (err) { console.error(err); alert('Toplu silme hatası'); }
+    })();
   };
 
   const toggleSelect = (id: string) => {
@@ -247,30 +265,41 @@ export default function Home() {
 
   const createList = (name: string) => {
     if (!name.trim()) return;
-    setLists((prev) => [...prev, { id: uid(), name: name.trim(), members: [] }]);
-    setIsListModalOpen(false);
-    toastShow("Liste oluşturuldu", "📋");
+    (async () => {
+      try {
+        await fetch('/api/lists', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name.trim() }) });
+        await refreshAll();
+        toastShow('Liste oluşturuldu', '📋');
+      } catch (err) { console.error(err); alert('Liste oluşturma hatası'); }
+      finally { setIsListModalOpen(false); }
+    })();
   };
 
   const deleteList = (id: string) => {
     if (!confirm("Bu liste silinsin mi?")) return;
-    setLists((prev) => prev.filter((l) => l.id !== id));
-    if (currentView === "list" && currentViewData === id) setView("all");
-    toastShow("Liste silindi", "🗑");
+    (async () => {
+      try {
+        await fetch(`/api/lists/${id}`, { method: 'DELETE' });
+        await refreshAll();
+        if (currentView === 'list' && currentViewData === id) setView('all');
+        toastShow('Liste silindi', '🗑');
+      } catch (err) { console.error(err); alert('Liste silme hatası'); }
+    })();
   };
 
   const addSelectedToList = (listId: string) => {
     if (!selectedIds.size) return;
-    setLists((prev) =>
-      prev.map((l) => {
-        if (l.id !== listId) return l;
-        const members = new Set(l.members);
+    (async () => {
+      try {
+        const target = lists.find((l) => l.id === listId);
+        const members = new Set(target ? target.members : []);
         selectedIds.forEach((id) => members.add(id));
-        return { ...l, members: Array.from(members) };
-      }),
-    );
-    setIsAddToListModalOpen(false);
-    toastShow(`${selectedIds.size} influencer eklendi`, "📋");
+        await fetch(`/api/lists/${listId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ members: Array.from(members) }) });
+        await refreshAll();
+        toastShow(`${selectedIds.size} influencer eklendi`, '📋');
+      } catch (err) { console.error(err); alert('Listeye ekleme hatası'); }
+      finally { setIsAddToListModalOpen(false); }
+    })();
   };
 
   const buildRows = (data: Influencer[]) => {
