@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 declare global {
   // Allow global `var` across module reloads in dev
   // eslint-disable-next-line no-var
-  var __prisma?: PrismaClient;
+  var __prisma: PrismaClient | undefined;
 }
 
 export const prisma = global.__prisma ?? new PrismaClient();

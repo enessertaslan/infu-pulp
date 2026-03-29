@@ -1,15 +1,19 @@
 import { NextResponse } from 'next/server';
-import prisma from '../../../../../lib/prisma';
+import prisma from '../../../../lib/prisma';
 
-export async function GET(req: Request, { params }: { params: { id: string } }) {
-  const { id } = params;
+type RouteContext = {
+  params: Promise<{ id: string }>;
+};
+
+export async function GET(_req: Request, { params }: RouteContext) {
+  const { id } = await params;
   const list = await prisma.list.findUnique({ where: { id }, include: { members: true } });
   if (!list) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   return NextResponse.json(list);
 }
 
-export async function PUT(req: Request, { params }: { params: { id: string } }) {
-  const { id } = params;
+export async function PUT(req: Request, { params }: RouteContext) {
+  const { id } = await params;
   const body = await req.json();
   // body may contain members: string[]
   const data: any = {};
@@ -22,8 +26,8 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
   return NextResponse.json(updated);
 }
 
-export async function DELETE(req: Request, { params }: { params: { id: string } }) {
-  const { id } = params;
+export async function DELETE(_req: Request, { params }: RouteContext) {
+  const { id } = await params;
   await prisma.list.delete({ where: { id } });
   return NextResponse.json({ success: true });
 }
