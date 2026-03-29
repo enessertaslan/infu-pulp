@@ -1,4 +1,16 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+node_modules/
+.next/
+.env
+/.vercel
+dist/
+pnpm-lock.yaml
+package-lock.json
+npm-debug.log*
+yarn-error.log*
+prisma/dev.db
+/*.db
+coverage/
+*.log# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
 /node_modules

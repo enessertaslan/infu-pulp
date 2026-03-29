@@ -1,0 +1,45 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Influencer {
+  id             String   @id @default(uuid())
+  name           String
+  link           String?
+  channel        String
+  geo            String?
+  lang           String?
+  followers      Int?
+  campaign       String?
+  avgviews       Int?
+  erpost         Float?
+  vrpost         Float?
+  erview         Float?
+  price1         Float?
+  price3         Float?
+  price5         Float?
+  extraCampaigns ExtraCampaign[]
+  lists          List[]   @relation("ListMembers")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model List {
+  id        String       @id @default(uuid())
+  name      String
+  members   Influencer[] @relation("ListMembers")
+  createdAt DateTime     @default(now())
+}
+
+model ExtraCampaign {
+  id           String     @id @default(uuid())
+  name         String
+  price        Float?
+  influencer   Influencer @relation(fields: [influencerId], references: [id])
+  influencerId String
+}
