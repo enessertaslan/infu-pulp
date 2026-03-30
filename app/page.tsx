@@ -62,6 +62,11 @@ const erClass = (v?: number) => {
 
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2);
 
+const getApiError = async (response: Response) => {
+  const payload = await response.json().catch(() => null);
+  return typeof payload?.error === "string" ? payload.error : "Sunucu hatasÄ±";
+};
+
 export default function Home() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [currentView, setCurrentView] = useState<"all" | "list" | "channel">("all");
@@ -187,22 +192,31 @@ export default function Home() {
 
     (async () => {
       try {
+        const response = await fetch(editingId ? `/api/influencers/${editingId}` : '/api/influencers', {
+          method: editingId ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+          throw new Error(await getApiError(response));
+        }
         if (editingId) {
-          await fetch(`/api/influencers/${editingId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...payload, extraCampaigns }) });
           toastShow('Güncellendi', '✎');
         } else {
-          await fetch('/api/influencers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...payload, extraCampaigns }) });
           toastShow('Eklendi', '✓');
         }
         await refreshAll();
-      } catch (err) {
-        console.error(err);
-        alert('Sunucu hatası');
-      } finally {
         setIsAddModalOpen(false);
         setEditingId(null);
         setExtraCampaigns([]);
         setForm({ channel: '' });
+      } catch (err) {
+        console.error(err);
+        if (err instanceof Error) {
+          alert(err.message);
+          return;
+        }
+        alert('Sunucu hatası');
       }
     })();
   };

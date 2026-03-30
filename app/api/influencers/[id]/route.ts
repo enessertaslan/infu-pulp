@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { buildExtraCampaignCreateManyData, buildInfluencerWriteData } from '../../../../lib/influencer-data';
 import prisma from '../../../../lib/prisma';
 
 type RouteContext = {
@@ -15,12 +16,19 @@ export async function GET(_req: Request, { params }: RouteContext) {
 export async function PUT(req: Request, { params }: RouteContext) {
   const { id } = await params;
   const body = await req.json();
-  const updated = await prisma.influencer.update({ where: { id }, data: { ...body } });
+  const data = buildInfluencerWriteData(body);
+
+  if (!data.name || !data.channel) {
+    return NextResponse.json({ error: 'name and channel required' }, { status: 400 });
+  }
+
+  await prisma.influencer.update({ where: { id }, data });
   // handle extraCampaigns updates simply by replacing
   if (Array.isArray(body.extraCampaigns)) {
     await prisma.extraCampaign.deleteMany({ where: { influencerId: id } });
-    if (body.extraCampaigns.length) {
-      await prisma.extraCampaign.createMany({ data: body.extraCampaigns.map((c: any) => ({ name: c.name, price: c.price ? Number(c.price) : null, influencerId: id })) });
+    const extraCampaignData = buildExtraCampaignCreateManyData(body.extraCampaigns, id);
+    if (extraCampaignData.length) {
+      await prisma.extraCampaign.createMany({ data: extraCampaignData });
     }
   }
   const withExtras = await prisma.influencer.findUnique({ where: { id }, include: { extraCampaigns: true } });
